@@ -1,0 +1,63 @@
+{
+  "name": "prisma-soft-delete",
+  "version": "1.0.2",
+  "description": "Transparent soft delete extension for Prisma using $extends API",
+  "type": "module",
+  "main": "dist/index.cjs",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --platform=node --format=esm --outfile=dist/index.js && esbuild src/index.ts --bundle --platform=node --format=cjs --outfile=dist/index.cjs && tsc -p tsconfig.build.json && cp dist/index.d.ts dist/index.d.cts",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check src/",
+    "lint:fix": "biome check --write src/",
+    "format": "biome format --write src/",
+    "prepublishOnly": "npm run build"
+  },
+  "peerDependencies": {
+    "@prisma/client": ">=5.0.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.4.6",
+    "@prisma/client": "^7.5.0",
+    "@types/node": "^25.5.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5"
+  },
+  "keywords": [
+    "prisma",
+    "soft-delete",
+    "extension",
+    "typescript",
+    "orm"
+  ],
+  "license": "MIT",
+  "author": "Husain Korasawala",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/husainkorasawala/prisma-soft-delete.git"
+  },
+  "bugs": {
+    "url": "https://github.com/husainkorasawala/prisma-soft-delete/issues"
+  },
+  "homepage": "https://github.com/husainkorasawala/prisma-soft-delete#readme",
+  "engines": {
+    "node": ">=18"
+  }
+}

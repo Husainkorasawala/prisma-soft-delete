@@ -1,0 +1,19 @@
+# Defense in depth: package.json "files" is the real allowlist.
+# If "files" is ever widened, these should still never ship to npm.
+
+src/
+biome.json
+tsconfig.json
+tsconfig.build.json
+*.lock
+bun.lock
+pnpm-lock.yaml
+yarn.lock
+package-lock.json
+.git/
+.github/
+.claude/
+.env
+.env.*
+*.tgz
+coverage/

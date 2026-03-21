@@ -1,0 +1,16 @@
+node_modules/
+dist/
+
+# Local env and OS noise
+.env
+.env.*
+!.env.example
+.DS_Store
+*.tgz
+
+# Editor / agent local settings (never commit)
+.claude/
+
+# Coverage / caches (if added later)
+coverage/
+.nyc_output/
