@@ -1,6 +1,6 @@
 {
   "name": "prisma-soft-delete",
-  "version": "1.0.2",
+  "version": "1.0.5",
   "description": "Transparent soft delete extension for Prisma using $extends API",
   "type": "module",
   "main": "dist/index.cjs",

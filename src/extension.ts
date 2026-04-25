@@ -77,6 +77,80 @@ function getModelConfig(
 }
 
 /**
+ * Resolve a model delegate from an extension-aware client context.
+ *
+ * In chained `$extends()` setups, query-extension `this` may not expose
+ * delegates directly (for example `this.user`). We therefore walk through
+ * known context wrappers (`Prisma.getExtensionContext(this)` and `$parent`)
+ * and return the first matching delegate.
+ */
+function resolveClientContext(
+  extensionThis: unknown,
+  modelKey: string,
+  queryFn?: unknown,
+): Record<string, unknown> {
+  // biome-ignore lint/suspicious/noExplicitAny: Runtime extension context shape
+  const direct = extensionThis as any;
+  const context = Prisma.getExtensionContext(extensionThis) as unknown;
+  const visited = new Set<unknown>();
+  // Some extension stacks expose parent client only through `query`.
+  const queue: unknown[] = [direct, context, queryFn];
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (
+      !current ||
+      (typeof current !== 'object' && typeof current !== 'function') ||
+      visited.has(current)
+    ) {
+      continue;
+    }
+
+    visited.add(current);
+    // biome-ignore lint/suspicious/noExplicitAny: Runtime traversal
+    const candidate = (current as any)[modelKey];
+    if (candidate && typeof candidate === 'object') {
+      return current as Record<string, unknown>;
+    }
+
+    // biome-ignore lint/suspicious/noExplicitAny: Runtime traversal
+    const parent = (current as any).$parent;
+    if (parent) queue.push(parent);
+  }
+
+  throw new Error(
+    `Could not resolve model delegate "${modelKey}" from Prisma extension context.`,
+  );
+}
+
+function resolveModelDelegate(
+  extensionThis: unknown,
+  modelKey: string,
+  queryFn?: unknown,
+): Record<string, unknown> {
+  // If the current extension context is already a model delegate, use it.
+  // biome-ignore lint/suspicious/noExplicitAny: Runtime extension context shape
+  const direct = extensionThis as any;
+  if (
+    direct &&
+    (typeof direct === 'object' || typeof direct === 'function') &&
+    typeof direct.findFirst === 'function'
+  ) {
+    return direct as Record<string, unknown>;
+  }
+
+  const clientContext = resolveClientContext(extensionThis, modelKey, queryFn);
+  const delegate = clientContext[modelKey];
+  if (
+    !delegate ||
+    (typeof delegate !== 'object' && typeof delegate !== 'function')
+  ) {
+    throw new Error(`Could not resolve model delegate "${modelKey}".`);
+  }
+  return delegate as Record<string, unknown>;
+}
+
+/**
  * Creates the soft delete Prisma extension.
  *
  * @param config - Configuration specifying which models participate in
@@ -175,13 +249,19 @@ export function softDeleteExtension(config: SoftDeleteConfig) {
             const modelKey = normalizeModelName(model);
             const mc = getModelConfig(model, config);
 
-            // Access the model delegate on the Prisma client to call findFirst.
-            // `this` in a Prisma query extension refers to the current client.
-            // biome-ignore lint/suspicious/noExplicitAny: Prisma extension client type
-            const client = this as any;
             const filteredArgs = filterNestedRelations(args, config);
+            const delegate = resolveModelDelegate(this, modelKey, query);
+            const findFirst = delegate.findFirst as
+              | ((args: Record<string, unknown>) => unknown)
+              | undefined;
 
-            return client[modelKey].findFirst({
+            if (!findFirst) {
+              throw new Error(
+                `Model delegate "${modelKey}" does not expose findFirst.`,
+              );
+            }
+
+            return findFirst({
               ...filteredArgs,
               where: injectDeletedFilter(
                 filteredArgs.where as Record<string, unknown> | undefined,
@@ -209,11 +289,19 @@ export function softDeleteExtension(config: SoftDeleteConfig) {
             const modelKey = normalizeModelName(model);
             const mc = getModelConfig(model, config);
 
-            // biome-ignore lint/suspicious/noExplicitAny: Prisma extension client type
-            const client = this as any;
             const filteredArgs = filterNestedRelations(args, config);
+            const delegate = resolveModelDelegate(this, modelKey, query);
+            const findFirst = delegate.findFirst as
+              | ((args: Record<string, unknown>) => Promise<unknown>)
+              | undefined;
 
-            const result = await client[modelKey].findFirst({
+            if (!findFirst) {
+              throw new Error(
+                `Model delegate "${modelKey}" does not expose findFirst.`,
+              );
+            }
+
+            const result = await findFirst({
               ...filteredArgs,
               where: injectDeletedFilter(
                 filteredArgs.where as Record<string, unknown> | undefined,
@@ -291,17 +379,26 @@ export function softDeleteExtension(config: SoftDeleteConfig) {
           const modelKey = normalizeModelName(model);
           const mc = getModelConfig(model, config);
 
-          // biome-ignore lint/suspicious/noExplicitAny: Prisma extension client type
-          const client = this as any;
+          const delegate = resolveModelDelegate(this, modelKey, _query);
+          const update = delegate.update as
+            | ((args: Record<string, unknown>) => unknown)
+            | undefined;
+
+          if (!update) {
+            throw new Error(
+              `Model delegate "${modelKey}" does not expose update.`,
+            );
+          }
+          const clientContext = resolveClientContext(this, modelKey, _query);
 
           // Cascade soft-delete to child relations first
-          await cascadeSoftDelete(client, model, args.where, config);
+          await cascadeSoftDelete(clientContext, model, args.where, config);
 
           // Soft-delete the parent record by updating it.
           // Use `withCascadeContext` to bypass the mutation guard since
           // we're setting `deleted` and `deletedAt` internally.
           return withCascadeContext(() =>
-            client[modelKey].update({
+            update({
               ...args,
               data: {
                 [mc.field]: true,
@@ -326,15 +423,24 @@ export function softDeleteExtension(config: SoftDeleteConfig) {
           const modelKey = normalizeModelName(model);
           const mc = getModelConfig(model, config);
 
-          // biome-ignore lint/suspicious/noExplicitAny: Prisma extension client type
-          const client = this as any;
+          const delegate = resolveModelDelegate(this, modelKey, _query);
+          const updateMany = delegate.updateMany as
+            | ((args: Record<string, unknown>) => unknown)
+            | undefined;
+
+          if (!updateMany) {
+            throw new Error(
+              `Model delegate "${modelKey}" does not expose updateMany.`,
+            );
+          }
+          const clientContext = resolveClientContext(this, modelKey, _query);
 
           // Cascade first
-          await cascadeSoftDeleteMany(client, model, args.where, config);
+          await cascadeSoftDeleteMany(clientContext, model, args.where, config);
 
           // Soft-delete all matching parent records
           return withCascadeContext(() =>
-            client[modelKey].updateMany({
+            updateMany({
               where: args.where,
               data: {
                 [mc.field]: true,
